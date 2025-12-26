@@ -66,17 +66,16 @@ WORKFLOWS=(
 CHECKPOINT_MODELS=(
     # 示例 (Z-image-turbo 或者 Flux):
     # "https://civitai.com/api/download/models/798204?type=Model&format=SafeTensor&size=full&fp=fp16"
-    "https://civitai.com/api/download/models/2471283?type=Model&format=SafeTensor&size=pruned&fp=fp16"
-    "https://civitai.com/api/download/models/2388627?type=Model&format=SafeTensor&size=full&fp=fp8"
-    "https://civitai.com/api/download/models/2388548?type=Model&format=SafeTensor&size=full&fp=fp8"
-    "https://civitai.com/api/download/models/2520801?type=Model&format=GGUF&size=full&fp=fp8"
-    "https://civitai.com/api/download/models/2520805?type=Model&format=GGUF&size=full&fp=fp8"
+    # "https://civitai.com/api/download/models/2471283?type=Model&format=SafeTensor&size=pruned&fp=fp16"
+    # "https://civitai.com/api/download/models/2388548?type=Model&format=SafeTensor&size=full&fp=fp8"
+    #"https://civitai.com/api/download/models/2520801?type=Model&format=GGUF&size=full&fp=fp8"
+    #"https://civitai.com/api/download/models/2520805?type=Model&format=GGUF&size=full&fp=fp8"
 )
 
 UNET_MODELS=(
     "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
     "https://huggingface.co/T5B/Z-Image-Turbo-FP8/resolve/main/z-image-turbo-fp8-e4m3fn.safetensors"
-    "https://civitai.com/api/download/models/2490517?type=Model&format=SafeTensor&size=pruned&fp=fp8"
+    #"https://civitai.com/api/download/models/2490517?type=Model&format=SafeTensor&size=pruned&fp=fp8"
 )
 
 LORA_MODELS=(
@@ -85,7 +84,7 @@ LORA_MODELS=(
 
 VAE_MODELS=(
     "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
-    "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
+    #"https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
     "https://huggingface.co/Owen777/UltraFlux-v1/resolve/main/vae/diffusion_pytorch_model.safetensors"
 )
 
@@ -101,7 +100,7 @@ CONTROLNET_MODELS=(
 # 填入 text_encoders 模型链接
 TEXT_ENCODER_MODELS=(
     "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
-    "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+    #"https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
     # "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"
 )
 
