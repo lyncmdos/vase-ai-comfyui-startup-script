@@ -121,31 +121,28 @@ LLM_MODELS=(
 ### DO NOT EDIT BELOW HERE UNLESS YOU KNOW WHAT YOU ARE DOING ###
 
 function provisioning_start() {
-    # 1. 基础环境（建议保持串行，因为它们通常是后续操作的依赖）
-    echo "Updating package list and installing wget2..."
+    # 安装 wget2 和 uv (加速核心)
+    echo "Installing wget2 and uv for maximum speed..."
     sudo apt-get update > /dev/null 2>&1
     sudo apt-get install -y wget2 > /dev/null 2>&1
-    provisioning_get_apt_packages
+    # 通过官方脚本快速安装 uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    source $HOME/.cargo/env
     
     provisioning_print_header
 
-    echo "--------------------------------------------------------"
-    echo " 🚀 启动全并行模式: [1.插件+依赖] & [2.模型下载] 同时进行"
-    echo "--------------------------------------------------------"
-
-    # [线程1] 处理插件克隆及所有 PIP 依赖安装
+    # [线程1] 处理插件克隆及其 PIP 依赖 (使用 uv 下载)
     (
         provisioning_setup_nodes_and_pip
     ) &
     local pid_nodes_pip=$!
 
-    # [线程2] 处理所有模型下载
+    # [线程2] 处理模型下载
     (
         provisioning_download_all_models
     ) &
     local pid_models=$!
 
-    # 同时等待两个大流完成
     wait $pid_nodes_pip
     wait $pid_models
     
@@ -193,36 +190,27 @@ function provisioning_get_apt_packages() {
             sudo $APT_INSTALL ${APT_PACKAGES[@]}
     fi
 }
-
+ 
 function provisioning_setup_nodes_and_pip() {
     local req_files=()
     local node_paths=()
     export CMAKE_ARGS="-DLLAMA_CUDA=on"
     export FORCE_CMAKE=1
-    printf "开始并行处理插件克隆...\n"
-
-    # 并行克隆所有节点
+    # 1. 并行克隆插件 (保持不变)
     for repo in "${NODES[@]}"; do
         dir="${repo##*/}"
         path="${COMFYUI_DIR}/custom_nodes/${dir}"
         node_paths+=("$path")
-        
         if [[ -d $path ]]; then
-            if [[ ${AUTO_UPDATE,,} != "false" ]]; then
-                ( cd "$path" && git pull ) & 
-            fi
+            ( cd "$path" && git pull ) & 
         else
             git clone "${repo}" "${path}" --recursive &
         fi
-        
-        # 限制 Git 并发
         if [[ $(jobs -r | wc -l) -ge 64 ]]; then wait -n; fi
     done
     wait
 
-    printf "插件已就绪，开始合并安装所有 PIP 依赖...\n"
-
-    # 收集插件的 requirements.txt
+    # 2. 收集 requirements
     for path in "${node_paths[@]}"; do
         requirements="${path}/requirements.txt"
         if [[ -e $requirements ]]; then
@@ -230,9 +218,14 @@ function provisioning_setup_nodes_and_pip() {
         fi
     done
 
-    # 合并全局 PIP_PACKAGES 和 插件依赖，一次性安装（效率最高）
+    # 3. 使用 uv 进行极致加速安装
     if [[ ${#req_files[@]} -gt 0 || ${#PIP_PACKAGES[@]} -gt 0 ]]; then
-        pip install --no-cache-dir "${PIP_PACKAGES[@]}" "${req_files[@]}"
+        printf "🚀 使用 UV 加速并行安装所有依赖...\n"
+        
+        # --system 确保它安装到当前激活的 venv 中
+        # --prefer-binary 优先下载预编译包，避免在服务器上现场编译 (GCC) 重装
+        # --concurrency 选项 uv 默认就是满跑的
+        uv pip install --system --prefer-binary "${PIP_PACKAGES[@]}" "${req_files[@]}"
     fi
 }
 
