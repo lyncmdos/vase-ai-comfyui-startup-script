@@ -12,13 +12,13 @@ COMFYUI_DIR=${WORKSPACE}/ComfyUI
 # Packages are installed after nodes so we can fix them...
 
 APT_PACKAGES=(
-    #"package-1"
+    "wget2"
     #"package-2"
 )
 
 PIP_PACKAGES=(
-    #"package-1"
-    #"package-2"
+    "llama-cpp-python"
+    "gguf"
 )
 
 # --- 【修改点1】这里填入了你需要的所有插件 ---
@@ -57,6 +57,7 @@ NODES=(
     "https://github.com/plugcrypt/CRT-Nodes"
     "https://github.com/edelvarden/comfyui_image_metadata_extension"
     "https://github.com/adieyal/comfyui-dynamicprompts"
+    "https://github.com/pythongosssss/ComfyUI-Custom-Scripts"
 )
 
 WORKFLOWS=(
@@ -114,21 +115,48 @@ UPSCALE_MODELS=(
 LLM_MODELS=(
     "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
     "https://huggingface.co/DavidAU/Qwen3-8B-Hivemind-Instruct-Heretic-Abliterated-Uncensored-NEO-Imatrix-GGUF/resolve/main/Qwen3-8B-Hivemind-Inst-Hrtic-Ablit-Uncensored-Q8_0.gguf"
+    "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf?download=true"
 )
 
 ### DO NOT EDIT BELOW HERE UNLESS YOU KNOW WHAT YOU ARE DOING ###
 
 function provisioning_start() {
-    # 【加速模块】自动安装 aria2 以实现多线程下载
-    echo "Updating package list and installing aria2 for faster downloads..."
+    # 【加速模块】自动安装 aria2/wget2
+    echo "Updating package list and installing wget2 for faster downloads..."
     sudo apt-get update > /dev/null 2>&1
-    sudo apt-get install -y aria2 > /dev/null 2>&1
+    sudo apt-get install -y wget2 > /dev/null 2>&1
     
     provisioning_print_header
-    provisioning_get_apt_packages
-    provisioning_get_nodes
-    provisioning_get_pip_packages
     
+    # 基础包优先安装
+    provisioning_get_apt_packages
+    provisioning_get_pip_packages
+
+    echo "--------------------------------------------------------"
+    echo " 🚀 启动全并行下载模式 (Nodes 和 Models 同时进行)"
+    echo "--------------------------------------------------------"
+
+    # [线程1] 下载并配置 Nodes (插件)
+    (
+        provisioning_get_nodes
+    ) &
+    local pid_nodes=$!
+
+    # [线程2] 下载所有的 Models
+    (
+        provisioning_download_all_models
+    ) &
+    local pid_models=$!
+
+    # 等待两组大任务全部完成
+    wait $pid_nodes
+    wait $pid_models
+    
+    provisioning_print_end
+}
+
+# 辅助函数: 集中处理所有模型下载任务
+function provisioning_download_all_models() {
     # 下载各目录模型
     provisioning_get_files \
         "${COMFYUI_DIR}/models/checkpoints" \
@@ -137,7 +165,7 @@ function provisioning_start() {
         "${COMFYUI_DIR}/models/unet" \
         "${UNET_MODELS[@]}"
     provisioning_get_files \
-        "${COMFYUI_DIR}/models/lora" \
+        "${COMFYUI_DIR}/models/loras" \
         "${LORA_MODELS[@]}"
     provisioning_get_files \
         "${COMFYUI_DIR}/models/controlnet" \
@@ -161,8 +189,6 @@ function provisioning_start() {
     provisioning_get_files \
         "${COMFYUI_DIR}/models/LLM" \
         "${LLM_MODELS[@]}"
-        
-    provisioning_print_end
 }
 
 function provisioning_get_apt_packages() {
@@ -173,6 +199,8 @@ function provisioning_get_apt_packages() {
 
 function provisioning_get_pip_packages() {
     if [[ -n $PIP_PACKAGES ]]; then
+            export CMAKE_ARGS="-DLLAMA_CUDA=on"
+            export FORCE_CMAKE=1
             pip install --no-cache-dir ${PIP_PACKAGES[@]}
     fi
 }
@@ -232,12 +260,35 @@ function provisioning_get_files() {
     mkdir -p "$dir"
     shift
     arr=("$@")
-    printf "Downloading %s model(s) to %s...\n" "${#arr[@]}" "$dir"
+    
+    # 如果数组为空，直接返回，避免打印空日志
+    if [[ ${#arr[@]} -eq 0 ]]; then return 0; fi
+
+    echo "--------------------------------------------------------"
+    printf "准备下载 %s 个模型到目录: %s\n" "${#arr[@]}" "$dir"
+    
+    local max_jobs=4
+    local count=0
+
     for url in "${arr[@]}"; do
-        printf "Downloading: %s\n" "${url}"
-        provisioning_download "${url}" "${dir}"
-        printf "\n"
+        # 排除注释行
+        if [[ $url =~ ^# ]]; then continue; fi
+        
+        # 后台启动 wget 下载
+        provisioning_download "${url}" "${dir}" &
+        
+        # 计数器控制并发
+        ((count++))
+        if (( count >= max_jobs )); then
+            # 等待任一后台任务完成，保持并发池稳定
+            wait -n
+            ((count--))
+        fi
     done
+
+    # 等待当前目录所有下载任务完成
+    wait
+    printf "✅ 目录下载完成: %s\n\n" "$dir"
 }
 
 function provisioning_print_header() {
@@ -251,16 +302,47 @@ function provisioning_print_end() {
 # Download from $1 URL to $2 file path
 # Download from $1 URL to $2 file path
 function provisioning_download() {
-    if [[ -n $HF_TOKEN && $1 =~ ^https://([a-zA-Z0-9_-]+\.)?huggingface\.co(/|$|\?) ]]; then
+    local url="$1"
+    local dir="$2"
+    local auth_token=""
+
+    if [[ -n $HF_TOKEN && $url =~ huggingface\.co ]]; then
         auth_token="$HF_TOKEN"
-    elif 
-        [[ -n $CIVITAI_TOKEN && $1 =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
+    elif [[ -n $CIVITAI_TOKEN && $url =~ civitai\.com ]]; then
         auth_token="$CIVITAI_TOKEN"
     fi
-    if [[ -n $auth_token ]];then
-        wget --header="Authorization: Bearer $auth_token" -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
+
+    local short_url=$(echo "$url" | cut -d'?' -f1 | awk -F/ '{print $NF}')
+    
+    # 确保目录存在
+    mkdir -p "$dir"
+
+    # wget2 参数：去掉 -P，依靠 cd 进入目录
+    local wget2_args="--max-threads=8 --progress=none --no-clobber --content-disposition"
+    
+    # wget 参数：保留 -P，因为它通常工作正常且稳定
+    local wget_args="-q -nc --content-disposition -P \"$dir\""
+
+    if [[ -n $auth_token ]]; then
+        if command -v wget2 &> /dev/null; then
+            # 【修复】使用子 Shell ( cd ... && wget2 ... ) 强制在目录内执行
+            ( cd "$dir" && wget2 --header="Authorization: Bearer $auth_token" $wget2_args "$url" )
+        else
+            wget --header="Authorization: Bearer $auth_token" $wget_args "$url"
+        fi
     else
-        wget -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
+        if command -v wget2 &> /dev/null; then
+             # 【修复】同上
+             ( cd "$dir" && wget2 $wget2_args "$url" )
+        else
+             wget $wget_args "$url"
+        fi
+    fi
+    
+    if [ $? -eq 0 ]; then
+        printf " ✅ [下载OK] %s\n" "$short_url"
+    else
+        printf " ❌ [下载Fail] %s\n" "$short_url"
     fi
 }
 
