@@ -128,6 +128,7 @@ function provisioning_start() {
     # 通过官方脚本快速安装 uv
     curl -LsSf https://astral.sh/uv/install.sh | sh
     source $HOME/.cargo/env
+    source $HOME/.local/bin/env
     
     provisioning_print_header
 
