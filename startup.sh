@@ -56,6 +56,7 @@ NODES=(
     "https://github.com/chrisfreilich/virtuoso-nodes"
     "https://github.com/plugcrypt/CRT-Nodes"
     "https://github.com/edelvarden/comfyui_image_metadata_extension"
+    "https://github.com/adieyal/comfyui-dynamicprompts"
 )
 
 WORKFLOWS=(
