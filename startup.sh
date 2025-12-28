@@ -197,7 +197,8 @@ function provisioning_get_apt_packages() {
 function provisioning_setup_nodes_and_pip() {
     local req_files=()
     local node_paths=()
-
+    export CMAKE_ARGS="-DLLAMA_CUDA=on"
+    export FORCE_CMAKE=1
     printf "开始并行处理插件克隆...\n"
 
     # 并行克隆所有节点
