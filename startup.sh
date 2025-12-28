@@ -200,7 +200,7 @@ function provisioning_get_nodes() {
         fi
         
         # 限制并发数，防止进程过多（可选，32个通常没问题）
-        if [[ $(jobs -r | wc -l) -ge 16 ]]; then
+        if [[ $(jobs -r | wc -l) -ge 128 ]]; then
             wait -n
         fi
     done
