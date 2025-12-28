@@ -121,35 +121,32 @@ LLM_MODELS=(
 ### DO NOT EDIT BELOW HERE UNLESS YOU KNOW WHAT YOU ARE DOING ###
 
 function provisioning_start() {
-    # 【加速模块】自动安装 aria2/wget2
-    echo "Updating package list and installing wget2 for faster downloads..."
+    # 1. 基础环境（建议保持串行，因为它们通常是后续操作的依赖）
+    echo "Updating package list and installing wget2..."
     sudo apt-get update > /dev/null 2>&1
     sudo apt-get install -y wget2 > /dev/null 2>&1
+    provisioning_get_apt_packages
     
     provisioning_print_header
-    
-    # 基础包优先安装
-    provisioning_get_apt_packages
-    provisioning_get_pip_packages
 
     echo "--------------------------------------------------------"
-    echo " 🚀 启动全并行下载模式 (Nodes 和 Models 同时进行)"
+    echo " 🚀 启动全并行模式: [1.插件+依赖] & [2.模型下载] 同时进行"
     echo "--------------------------------------------------------"
 
-    # [线程1] 下载并配置 Nodes (插件)
+    # [线程1] 处理插件克隆及所有 PIP 依赖安装
     (
-        provisioning_get_nodes
+        provisioning_setup_nodes_and_pip
     ) &
-    local pid_nodes=$!
+    local pid_nodes_pip=$!
 
-    # [线程2] 下载所有的 Models
+    # [线程2] 处理所有模型下载
     (
         provisioning_download_all_models
     ) &
     local pid_models=$!
 
-    # 等待两组大任务全部完成
-    wait $pid_nodes
+    # 同时等待两个大流完成
+    wait $pid_nodes_pip
     wait $pid_models
     
     provisioning_print_end
@@ -197,20 +194,13 @@ function provisioning_get_apt_packages() {
     fi
 }
 
-function provisioning_get_pip_packages() {
-    if [[ -n $PIP_PACKAGES ]]; then
-            export CMAKE_ARGS="-DLLAMA_CUDA=on"
-            export FORCE_CMAKE=1
-            pip install --no-cache-dir ${PIP_PACKAGES[@]}
-    fi
-}
-
-function provisioning_get_nodes() {
+function provisioning_setup_nodes_and_pip() {
     local req_files=()
     local node_paths=()
 
-    printf "Starting parallel node provisioning...\n"
+    printf "开始并行处理插件克隆...\n"
 
+    # 并行克隆所有节点
     for repo in "${NODES[@]}"; do
         dir="${repo##*/}"
         path="${COMFYUI_DIR}/custom_nodes/${dir}"
@@ -218,26 +208,20 @@ function provisioning_get_nodes() {
         
         if [[ -d $path ]]; then
             if [[ ${AUTO_UPDATE,,} != "false" ]]; then
-                printf "Updating node (Async): %s...\n" "${repo}"
                 ( cd "$path" && git pull ) & 
             fi
         else
-            printf "Downloading node (Async): %s...\n" "${repo}"
-            # 后台克隆，--recursive 确保子模块也能下载
             git clone "${repo}" "${path}" --recursive &
         fi
         
-        # 限制并发数，防止进程过多（可选，32个通常没问题）
-        if [[ $(jobs -r | wc -l) -ge 128 ]]; then
-            wait -n
-        fi
+        # 限制 Git 并发
+        if [[ $(jobs -r | wc -l) -ge 64 ]]; then wait -n; fi
     done
-
-    # 等待所有 git 操作完成
     wait
-    printf "All nodes downloaded/updated. Starting batch dependency installation...\n"
 
-    # 扫描所有已下载插件的 requirements.txt
+    printf "插件已就绪，开始合并安装所有 PIP 依赖...\n"
+
+    # 收集插件的 requirements.txt
     for path in "${node_paths[@]}"; do
         requirements="${path}/requirements.txt"
         if [[ -e $requirements ]]; then
@@ -245,11 +229,9 @@ function provisioning_get_nodes() {
         fi
     done
 
-    # 如果有 requirements 列表，一次性安装
-    if [[ ${#req_files[@]} -gt 0 ]]; then
-        printf "Installing all dependencies in one batch...\n"
-        # 使用 --no-cache-dir 节省空间，--excessive-processing 提升速度
-        pip install --no-cache-dir "${req_files[@]}"
+    # 合并全局 PIP_PACKAGES 和 插件依赖，一次性安装（效率最高）
+    if [[ ${#req_files[@]} -gt 0 || ${#PIP_PACKAGES[@]} -gt 0 ]]; then
+        pip install --no-cache-dir "${PIP_PACKAGES[@]}" "${req_files[@]}"
     fi
 }
 
@@ -267,7 +249,7 @@ function provisioning_get_files() {
     echo "--------------------------------------------------------"
     printf "准备下载 %s 个模型到目录: %s\n" "${#arr[@]}" "$dir"
     
-    local max_jobs=4
+    local max_jobs=5
     local count=0
 
     for url in "${arr[@]}"; do
@@ -306,44 +288,30 @@ function provisioning_download() {
     local dir="$2"
     local auth_token=""
 
-    if [[ -n $HF_TOKEN && $url =~ huggingface\.co ]]; then
-        auth_token="$HF_TOKEN"
-    elif [[ -n $CIVITAI_TOKEN && $url =~ civitai\.com ]]; then
-        auth_token="$CIVITAI_TOKEN"
-    fi
+    [[ -n $HF_TOKEN && $url =~ huggingface\.co ]] && auth_token="$HF_TOKEN"
+    [[ -n $CIVITAI_TOKEN && $url =~ civitai\.com ]] && auth_token="$CIVITAI_TOKEN"
 
     local short_url=$(echo "$url" | cut -d'?' -f1 | awk -F/ '{print $NF}')
-    
-    # 确保目录存在
     mkdir -p "$dir"
 
-    # wget2 参数：去掉 -P，依靠 cd 进入目录
+    # 使用 wget2 开启 8 线程
     local wget2_args="--max-threads=8 --progress=none --no-clobber --content-disposition"
     
-    # wget 参数：保留 -P，因为它通常工作正常且稳定
-    local wget_args="-q -nc --content-disposition -P \"$dir\""
-
     if [[ -n $auth_token ]]; then
         if command -v wget2 &> /dev/null; then
-            # 【修复】使用子 Shell ( cd ... && wget2 ... ) 强制在目录内执行
             ( cd "$dir" && wget2 --header="Authorization: Bearer $auth_token" $wget2_args "$url" )
         else
-            wget --header="Authorization: Bearer $auth_token" $wget_args "$url"
+            wget --header="Authorization: Bearer $auth_token" -q -nc --content-disposition -P "$dir" "$url"
         fi
     else
         if command -v wget2 &> /dev/null; then
-             # 【修复】同上
              ( cd "$dir" && wget2 $wget2_args "$url" )
         else
-             wget $wget_args "$url"
+             wget -q -nc --content-disposition -P "$dir" "$url"
         fi
     fi
     
-    if [ $? -eq 0 ]; then
-        printf " ✅ [下载OK] %s\n" "$short_url"
-    else
-        printf " ❌ [下载Fail] %s\n" "$short_url"
-    fi
+    [ $? -eq 0 ] && printf " ✅ [OK] %s\n" "$short_url" || printf " ❌ [FAIL] %s\n" "$short_url"
 }
 
 # Allow user to disable provisioning if they started with a script they didn't want
