@@ -249,6 +249,7 @@ function provisioning_print_end() {
 }
 
 # Download from $1 URL to $2 file path
+# Download from $1 URL to $2 file path
 function provisioning_download() {
     if [[ -n $HF_TOKEN && $1 =~ ^https://([a-zA-Z0-9_-]+\.)?huggingface\.co(/|$|\?) ]]; then
         auth_token="$HF_TOKEN"
@@ -256,23 +257,10 @@ function provisioning_download() {
         [[ -n $CIVITAI_TOKEN && $1 =~ ^https://([a-zA-Z0-9_-]+\.)?civitai\.com(/|$|\?) ]]; then
         auth_token="$CIVITAI_TOKEN"
     fi
-    
-    # 【智能加速逻辑】
-    # 如果系统里有 aria2，并且是 HuggingFace 的直链（以文件扩展名结尾），则使用多线程
-    # Civitai 链接通常没有扩展名，aria2 处理文件名比较麻烦，所以 Civitai 还是用 wget 此时最稳
-    if command -v aria2c >/dev/null 2>&1 && [[ "$1" == *.* ]]; then
-        if [[ -n $auth_token ]];then
-            aria2c --header="Authorization: Bearer $auth_token" -x 16 -s 16 -k 1M -c -d "$2" "$1"
-        else
-            aria2c -x 16 -s 16 -k 1M -c -d "$2" "$1"
-        fi
+    if [[ -n $auth_token ]];then
+        wget --header="Authorization: Bearer $auth_token" -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
     else
-        # 降级回退到 wget (针对 Civitai API 或 aria2 安装失败的情况)
-        if [[ -n $auth_token ]];then
-            wget --header="Authorization: Bearer $auth_token" -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
-        else
-            wget -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
-        fi
+        wget -qnc --content-disposition --show-progress -e dotbytes="${3:-4M}" -P "$2" "$1"
     fi
 }
 
