@@ -178,26 +178,51 @@ function provisioning_get_pip_packages() {
 }
 
 function provisioning_get_nodes() {
+    local req_files=()
+    local node_paths=()
+
+    printf "Starting parallel node provisioning...\n"
+
     for repo in "${NODES[@]}"; do
         dir="${repo##*/}"
         path="${COMFYUI_DIR}/custom_nodes/${dir}"
-        requirements="${path}/requirements.txt"
+        node_paths+=("$path")
+        
         if [[ -d $path ]]; then
             if [[ ${AUTO_UPDATE,,} != "false" ]]; then
-                printf "Updating node: %s...\n" "${repo}"
-                ( cd "$path" && git pull )
-                if [[ -e $requirements ]]; then
-                   pip install --no-cache-dir -r "$requirements"
-                fi
+                printf "Updating node (Async): %s...\n" "${repo}"
+                ( cd "$path" && git pull ) & 
             fi
         else
-            printf "Downloading node: %s...\n" "${repo}"
-            git clone "${repo}" "${path}" --recursive
-            if [[ -e $requirements ]]; then
-                pip install --no-cache-dir -r "${requirements}"
-            fi
+            printf "Downloading node (Async): %s...\n" "${repo}"
+            # 后台克隆，--recursive 确保子模块也能下载
+            git clone "${repo}" "${path}" --recursive &
+        fi
+        
+        # 限制并发数，防止进程过多（可选，32个通常没问题）
+        if [[ $(jobs -r | wc -l) -ge 16 ]]; then
+            wait -n
         fi
     done
+
+    # 等待所有 git 操作完成
+    wait
+    printf "All nodes downloaded/updated. Starting batch dependency installation...\n"
+
+    # 扫描所有已下载插件的 requirements.txt
+    for path in "${node_paths[@]}"; do
+        requirements="${path}/requirements.txt"
+        if [[ -e $requirements ]]; then
+            req_files+=("-r" "$requirements")
+        fi
+    done
+
+    # 如果有 requirements 列表，一次性安装
+    if [[ ${#req_files[@]} -gt 0 ]]; then
+        printf "Installing all dependencies in one batch...\n"
+        # 使用 --no-cache-dir 节省空间，--excessive-processing 提升速度
+        pip install --no-cache-dir "${req_files[@]}"
+    fi
 }
 
 function provisioning_get_files() {
