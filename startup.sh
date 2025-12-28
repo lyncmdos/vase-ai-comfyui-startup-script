@@ -196,21 +196,30 @@ function provisioning_setup_nodes_and_pip() {
     local node_paths=()
     export CMAKE_ARGS="-DLLAMA_CUDA=on"
     export FORCE_CMAKE=1
-    # 1. 并行克隆插件 (保持不变)
+    printf "开始并行处理插件克隆...\n"
+
+    # 1. 并行克隆/更新插件
     for repo in "${NODES[@]}"; do
         dir="${repo##*/}"
         path="${COMFYUI_DIR}/custom_nodes/${dir}"
         node_paths+=("$path")
+        
         if [[ -d $path ]]; then
-            ( cd "$path" && git pull ) & 
+            if [[ ${AUTO_UPDATE,,} != "false" ]]; then
+                ( cd "$path" && git pull ) & 
+            fi
         else
             git clone "${repo}" "${path}" --recursive &
         fi
+        
+        # 限制 Git 并发数
         if [[ $(jobs -r | wc -l) -ge 64 ]]; then wait -n; fi
     done
     wait
 
-    # 2. 收集 requirements
+    printf "插件下载完成，正在整理依赖列表...\n"
+
+    # 2. 收集所有 requirements.txt
     for path in "${node_paths[@]}"; do
         requirements="${path}/requirements.txt"
         if [[ -e $requirements ]]; then
@@ -218,14 +227,14 @@ function provisioning_setup_nodes_and_pip() {
         fi
     done
 
-    # 3. 使用 uv 进行极致加速安装
+    # 3. 使用 uv 安装（去掉 --prefer-binary，改用更兼容的写法）
     if [[ ${#req_files[@]} -gt 0 || ${#PIP_PACKAGES[@]} -gt 0 ]]; then
-        printf "🚀 使用 UV 加速并行安装所有依赖...\n"
+        printf "🚀 使用 UV 极速安装所有依赖...\n"
         
-        # --system 确保它安装到当前激活的 venv 中
-        # --prefer-binary 优先下载预编译包，避免在服务器上现场编译 (GCC) 重装
-        # --concurrency 选项 uv 默认就是满跑的
-        uv pip install --system --prefer-binary "${PIP_PACKAGES[@]}" "${req_files[@]}"
+        # --system: 安装到当前 Python 环境
+        # --no-build: (可选) 如果你绝对不想等待编译，可以加这个。但建议不加，以防某些节点安装失败。
+        # uv 会自动并行下载下载所有包，比 pip 快得多。
+        uv pip install --system "${PIP_PACKAGES[@]}" "${req_files[@]}"
     fi
 }
 
