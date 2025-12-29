@@ -25,6 +25,7 @@ PIP_PACKAGES=(
 NODES=(
     "https://github.com/ltdrdata/ComfyUI-Manager"
     "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
+    "https://github.com/ltdrdata/ComfyUI-Impact-Pack"
     "https://github.com/ssitu/ComfyUI_UltimateSDUpscale"
     "https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes"
     "https://github.com/ltdrdata/was-node-suite-comfyui"
@@ -58,6 +59,7 @@ NODES=(
     "https://github.com/edelvarden/comfyui_image_metadata_extension"
     "https://github.com/adieyal/comfyui-dynamicprompts"
     "https://github.com/pythongosssss/ComfyUI-Custom-Scripts"
+    "https://github.com/lyncmdos/ComfyUI-Lychee"
 )
 
 WORKFLOWS=(
