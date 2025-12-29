@@ -17,8 +17,8 @@ APT_PACKAGES=(
 )
 
 PIP_PACKAGES=(
-    "llama-cpp-python"
     "gguf"
+    
 )
 
 # --- 【修改点1】这里填入了你需要的所有插件 ---
@@ -114,31 +114,38 @@ UPSCALE_MODELS=(
 # 填入 LLM 模型链接
 LLM_MODELS=(
     "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-    "https://huggingface.co/DavidAU/Qwen3-8B-Hivemind-Instruct-Heretic-Abliterated-Uncensored-NEO-Imatrix-GGUF/resolve/main/Qwen3-8B-Hivemind-Inst-Hrtic-Ablit-Uncensored-Q8_0.gguf"
-    "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf?download=true"
+    #"https://huggingface.co/DavidAU/Qwen3-8B-Hivemind-Instruct-Heretic-Abliterated-Uncensored-NEO-Imatrix-GGUF/resolve/main/Qwen3-8B-Hivemind-Inst-Hrtic-Ablit-Uncensored-Q8_0.gguf"
+    #"https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf?download=true"
+    "https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen3VL-8B-Instruct-Q8_0.gguf"
 )
 
 ### DO NOT EDIT BELOW HERE UNLESS YOU KNOW WHAT YOU ARE DOING ###
 
 function provisioning_start() {
-    # 安装 wget2 和 uv (加速核心)
+    # 1. 安装基础工具
     echo "Installing wget2 and uv for maximum speed..."
     sudo apt-get update > /dev/null 2>&1
     sudo apt-get install -y wget2 > /dev/null 2>&1
-    # 通过官方脚本快速安装 uv
+    
+    # 2. 安装 uv
     curl -LsSf https://astral.sh/uv/install.sh | sh
     source $HOME/.cargo/env
     source $HOME/.local/bin/env
+
+    # 3. 【关键新增】立刻安装 huggingface_hub 以启用 CLI
+    # 使用 --system 安装到系统环境，确保全局可用
+    printf "🚀 Installing Hugging Face CLI...\n"
+    uv pip install --system huggingface_hub[cli]
     
     provisioning_print_header
 
-    # [线程1] 处理插件克隆及其 PIP 依赖 (使用 uv 下载)
+    # [线程1] 处理插件
     (
         provisioning_setup_nodes_and_pip
     ) &
     local pid_nodes_pip=$!
 
-    # [线程2] 处理模型下载
+    # [线程2] 处理模型
     (
         provisioning_download_all_models
     ) &
@@ -152,38 +159,22 @@ function provisioning_start() {
 
 # 辅助函数: 集中处理所有模型下载任务
 function provisioning_download_all_models() {
-    # 下载各目录模型
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/checkpoints" \
-        "${CHECKPOINT_MODELS[@]}"
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/unet" \
-        "${UNET_MODELS[@]}"
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/loras" \
-        "${LORA_MODELS[@]}"
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/controlnet" \
-        "${CONTROLNET_MODELS[@]}"
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/vae" \
-        "${VAE_MODELS[@]}"
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/esrgan" \
-        "${ESRGAN_MODELS[@]}"
-        
-    # 下载自定义目录模型
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/text_encoders" \
-        "${TEXT_ENCODER_MODELS[@]}"
-        
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/upscale_models" \
-        "${UPSCALE_MODELS[@]}"
-        
-    provisioning_get_files \
-        "${COMFYUI_DIR}/models/LLM" \
-        "${LLM_MODELS[@]}"
+    echo "🚀 启动全目录并行下载模式..."
+
+    # 每个目录都加上 &，让它们在后台并行跑
+    provisioning_get_files "${COMFYUI_DIR}/models/checkpoints" "${CHECKPOINT_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/unet" "${UNET_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/loras" "${LORA_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/controlnet" "${CONTROLNET_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/vae" "${VAE_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/esrgan" "${ESRGAN_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/text_encoders" "${TEXT_ENCODER_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/upscale_models" "${UPSCALE_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/LLM" "${LLM_MODELS[@]}" &
+
+    # 关键：等待所有后台目录下载任务完成
+    wait
+    echo "✨ 所有模型目录同步完成！"
 }
 
 function provisioning_get_apt_packages() {
@@ -195,8 +186,8 @@ function provisioning_get_apt_packages() {
 function provisioning_setup_nodes_and_pip() {
     local req_files=()
     local node_paths=()
-    export CMAKE_ARGS="-DLLAMA_CUDA=on"
-    export FORCE_CMAKE=1
+    #export CMAKE_ARGS="-DLLAMA_CUDA=on"
+    #export FORCE_CMAKE=1
     printf "开始并行处理插件克隆...\n"
 
     # 1. 并行克隆/更新插件
@@ -237,44 +228,41 @@ function provisioning_setup_nodes_and_pip() {
         # uv 会自动并行下载下载所有包，比 pip 快得多。
         uv pip install --system "${PIP_PACKAGES[@]}" "${req_files[@]}"
     fi
+    printf "🚀 正在安装预编译的 CUDA 版 llama-cpp-python (免编译)...\n"
+    
+    # 注意：这里假设你的环境是 CUDA 12.x (cu121/cu122/cu123 通用)
+    # 如果你的环境是很老的 CUDA 11.8，把下面的 cu121 改成 cu118
+    uv pip install --system llama-cpp-python \
+        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
 }
 
 function provisioning_get_files() {
     if [[ -z $2 ]]; then return 1; fi
-    
-    dir="$1"
-    mkdir -p "$dir"
+    local dir="$1"
     shift
-    arr=("$@")
+    local arr=("$@")
     
-    # 如果数组为空，直接返回，避免打印空日志
-    if [[ ${#arr[@]} -eq 0 ]]; then return 0; fi
+    [[ ${#arr[@]} -eq 0 ]] && return 0
 
-    echo "--------------------------------------------------------"
-    printf "准备下载 %s 个模型到目录: %s\n" "${#arr[@]}" "$dir"
+    mkdir -p "$dir"
+    printf "📂 目录并发开启: %s (%s 个文件)\n" "$dir" "${#arr[@]}"
     
-    local max_jobs=5
+    # 内部仍然保持一定的并发，但因为外部已经并行了，这里可以设小一点
+    local max_internal_jobs=4
     local count=0
 
     for url in "${arr[@]}"; do
-        # 排除注释行
-        if [[ $url =~ ^# ]]; then continue; fi
+        [[ $url =~ ^# ]] && continue
         
-        # 后台启动 wget 下载
         provisioning_download "${url}" "${dir}" &
         
-        # 计数器控制并发
         ((count++))
-        if (( count >= max_jobs )); then
-            # 等待任一后台任务完成，保持并发池稳定
+        if (( count >= max_internal_jobs )); then
             wait -n
             ((count--))
         fi
     done
-
-    # 等待当前目录所有下载任务完成
     wait
-    printf "✅ 目录下载完成: %s\n\n" "$dir"
 }
 
 function provisioning_print_header() {
@@ -292,33 +280,62 @@ function provisioning_download() {
     local dir="$2"
     local auth_token=""
 
+    # 1. 清理 URL 中的参数 (例如 ?download=true)，防止干扰解析
+    local clean_url="${url%%\?*}"
+
     [[ -n $HF_TOKEN && $url =~ huggingface\.co ]] && auth_token="$HF_TOKEN"
     [[ -n $CIVITAI_TOKEN && $url =~ civitai\.com ]] && auth_token="$CIVITAI_TOKEN"
 
-    local short_url=$(echo "$url" | cut -d'?' -f1 | awk -F/ '{print $NF}')
-    mkdir -p "$dir"
+    local filename=$(basename "$clean_url")
 
-    # 使用 wget2 开启 8 线程
-    local wget2_args="--max-threads=8 --progress=none --no-clobber --content-disposition"
-    
-    if [[ -n $auth_token ]]; then
-        if command -v wget2 &> /dev/null; then
-            ( cd "$dir" && wget2 --header="Authorization: Bearer $auth_token" $wget2_args "$url" )
-        else
-            wget --header="Authorization: Bearer $auth_token" -q -nc --content-disposition -P "$dir" "$url"
-        fi
-    else
-        if command -v wget2 &> /dev/null; then
-             ( cd "$dir" && wget2 $wget2_args "$url" )
-        else
-             wget -q -nc --content-disposition -P "$dir" "$url"
+    # 2. 判断是否为 HuggingFace 链接
+    if [[ $clean_url =~ huggingface\.co ]]; then
+        # 正则表达式：提取 Repo 和 文件路径
+        # 匹配格式: huggingface.co/ USER / REPO / (resolve|blob) / BRANCH / PATH...
+        if [[ $clean_url =~ huggingface\.co/([^/]+/[^/]+)/(resolve|blob)/([^/]+)/(.+) ]]; then
+            local repo_id="${BASH_REMATCH[1]}"
+            local branch="${BASH_REMATCH[3]}" # 通常是 main，但也可能是其他分支
+            local file_path="${BASH_REMATCH[4]}"
+            
+            printf "⚡ [HF-CLI] Detecting: %s -> %s\n" "$repo_id" "$file_path"
+            
+            # 使用 huggingface-cli 下载
+            # --local-dir-use-symlinks False: 确保下载的是实体文件而不是缓存链接，方便移动
+            huggingface-cli download "$repo_id" "$file_path" \
+                --revision "$branch" \
+                --local-dir "$dir" \
+                --local-dir-use-symlinks False \
+                --quiet # 减少日志刷屏，想看进度可以去掉这行
+            
+            if [ $? -eq 0 ]; then
+                printf " ✅ [HF-CLI OK] %s\n" "$file_path"
+                return 0
+            else
+                printf " ⚠️ [HF-CLI FAIL] 尝试回退到 wget2: %s\n" "$filename"
+                # 如果 CLI 失败（比如版本不兼容），代码会自动往下走，用 wget2 兜底
+            fi
         fi
     fi
+
+    # 3. 非 HF 链接，或 HF 下载失败，回退到 wget2 / wget
+    local wget2_args="--max-threads=8 --progress=none --no-clobber --content-disposition"
     
-    [ $? -eq 0 ] && printf " ✅ [OK] %s\n" "$short_url" || printf " ❌ [FAIL] %s\n" "$short_url"
+    # 构建 Auth Header
+    local header_args=""
+    if [[ -n $auth_token ]]; then
+        header_args="--header=\"Authorization: Bearer $auth_token\""
+    fi
+    
+    if command -v wget2 &> /dev/null; then
+        # 注意：在 bash -c 中正确传递带引号的 header 比较麻烦，这里用 eval 或者直接 cd 运行
+        ( cd "$dir" && eval wget2 $header_args $wget2_args "\"$url\"" )
+    else
+        wget -q -nc --content-disposition --header="Authorization: Bearer $auth_token" -P "$dir" "$url"
+    fi
+
+    [ $? -eq 0 ] && printf " ✅ [WGET OK] %s\n" "$filename" || printf " ❌ [FAIL] %s\n" "$filename"
 }
 
-# Allow user to disable provisioning if they started with a script they didn't want
 if [[ ! -f /.noprovisioning ]]; then
     provisioning_start
 fi
