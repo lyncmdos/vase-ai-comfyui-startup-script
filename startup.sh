@@ -74,22 +74,26 @@ CHECKPOINT_MODELS=(
     # "https://civitai.com/api/download/models/2388548?type=Model&format=SafeTensor&size=full&fp=fp8"
     #"https://civitai.com/api/download/models/2520801?type=Model&format=GGUF&size=full&fp=fp8"
     #"https://civitai.com/api/download/models/2520805?type=Model&format=GGUF&size=full&fp=fp8"
+    "https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/v18/Qwen-Rapid-AIO-NSFW-v18.safetensors"
 )
 
 UNET_MODELS=(
     "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
-    "https://huggingface.co/T5B/Z-Image-Turbo-FP8/resolve/main/z-image-turbo-fp8-e4m3fn.safetensors"
+    #"https://huggingface.co/T5B/Z-Image-Turbo-FP8/resolve/main/z-image-turbo-fp8-e4m3fn.safetensors"
     #"https://civitai.com/api/download/models/2490517?type=Model&format=SafeTensor&size=pruned&fp=fp8"
 )
 
 LORA_MODELS=(
     "https://civitai.com/api/download/models/2471161?type=Model&format=SafeTensor"
+    #"https://huggingface.co/lightx2v/Qwen-Image-Edit-2511-Lightning/resolve/main/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-fp32.safetensors"
 )
 
 VAE_MODELS=(
     "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
     #"https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
     "https://huggingface.co/Owen777/UltraFlux-v1/resolve/main/vae/diffusion_pytorch_model.safetensors"
+    "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors"
+    #"https://huggingface.co/Qwen/Qwen-Image-Edit-2511/resolve/main/vae/diffusion_pytorch_model.safetensors"
 )
 
 # 原生支持的 ESRGAN 目录
@@ -106,6 +110,7 @@ TEXT_ENCODER_MODELS=(
     "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
     #"https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
     # "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"
+    "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
 )
 
 # 填入 upscale_models 模型链接 (有些放在 esrgan 里，有些放在这)
@@ -120,7 +125,10 @@ LLM_MODELS=(
     #"https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf?download=true"
     "https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF/resolve/main/Qwen3VL-8B-Instruct-Q8_0.gguf"
 )
-
+DIFFUSION_MODELS=(
+    "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors"
+    "https://huggingface.co/unsloth/Qwen-Image-Edit-2511-GGUF/resolve/main/qwen-image-edit-2511-Q8_0.gguf"
+)
 ### DO NOT EDIT BELOW HERE UNLESS YOU KNOW WHAT YOU ARE DOING ###
 
 function provisioning_start() {
@@ -173,6 +181,7 @@ function provisioning_download_all_models() {
     provisioning_get_files "${COMFYUI_DIR}/models/text_encoders" "${TEXT_ENCODER_MODELS[@]}" &
     provisioning_get_files "${COMFYUI_DIR}/models/upscale_models" "${UPSCALE_MODELS[@]}" &
     provisioning_get_files "${COMFYUI_DIR}/models/LLM" "${LLM_MODELS[@]}" &
+    provisioning_get_files "${COMFYUI_DIR}/models/diffusion_models" "${DIFFUSION_MODELS[@]}" &
 
     # 关键：等待所有后台目录下载任务完成
     wait
